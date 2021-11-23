@@ -66,6 +66,7 @@ public class ConfigPublishRequestHandler extends RequestHandler<ConfigPublishReq
     public ConfigPublishResponse handle(ConfigPublishRequest request, RequestMeta meta) throws NacosException {
         
         try {
+            // 获取请求发送的参数
             String dataId = request.getDataId();
             String group = request.getGroup();
             String content = request.getContent();
@@ -81,6 +82,7 @@ public class ConfigPublishRequestHandler extends RequestHandler<ConfigPublishReq
             // check tenant
             ParamUtils.checkParam(dataId, group, "datumId", content);
             ParamUtils.checkParam(tag);
+            // 存储元数据
             Map<String, Object> configAdvanceInfo = new HashMap<String, Object>(10);
             MapUtil.putIfValNoNull(configAdvanceInfo, "config_tags", request.getAdditionParam("config_tags"));
             MapUtil.putIfValNoNull(configAdvanceInfo, "desc", request.getAdditionParam("desc"));
@@ -89,7 +91,8 @@ public class ConfigPublishRequestHandler extends RequestHandler<ConfigPublishReq
             MapUtil.putIfValNoNull(configAdvanceInfo, "type", type);
             MapUtil.putIfValNoNull(configAdvanceInfo, "schema", request.getAdditionParam("schema"));
             ParamUtils.checkParam(configAdvanceInfo);
-            
+
+            //判断是否是聚合数据
             if (AggrWhitelist.isAggrDataId(dataId)) {
                 Loggers.REMOTE_DIGEST
                         .warn("[aggr-conflict] {} attempt to publish single data, {}, {}", srcIp, dataId, group);
