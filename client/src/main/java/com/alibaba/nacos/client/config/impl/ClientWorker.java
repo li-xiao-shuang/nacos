@@ -401,6 +401,7 @@ public class ClientWorker implements Closeable {
 
     public ConfigResponse getServerConfig(String dataId, String group, String tenant, long readTimeout, boolean notify)
             throws NacosException {
+        // 转换为默认的group
         if (StringUtils.isBlank(group)) {
             group = Constants.DEFAULT_GROUP;
         }
@@ -924,7 +925,8 @@ public class ClientWorker implements Closeable {
 
         private RpcClient ensureRpcClient(String taskId) throws NacosException {
             synchronized (ClientWorker.this) {
-
+                
+                // 获取客户端标签
                 Map<String, String> labels = getLabels();
                 Map<String, String> newLabels = new HashMap<String, String>(labels);
                 newLabels.put("taskId", taskId);
@@ -989,20 +991,29 @@ public class ClientWorker implements Closeable {
         @Override
         public ConfigResponse queryConfig(String dataId, String group, String tenant, long readTimeouts, boolean notify)
                 throws NacosException {
+            // 构建请求单数
             ConfigQueryRequest request = ConfigQueryRequest.build(dataId, group, tenant);
+            // header 里面存入 notify 值
             request.putHeader(NOTIFY_HEADER, String.valueOf(notify));
+            // 获取一个正在运行的客户端
             RpcClient rpcClient = getOneRunningClient();
+            //  notify 为true
             if (notify) {
+                // 从cacheMap获取 key为dataId+group+tenant 的值
                 CacheData cacheData = cacheMap.get().get(GroupKey.getKeyTenant(dataId, group, tenant));
                 if (cacheData != null) {
+                    // 通过cacheData对象的TaskId创建client
                     rpcClient = ensureRpcClient(String.valueOf(cacheData.getTaskId()));
                 }
             }
+            // 调用服务端请求数据
             ConfigQueryResponse response = (ConfigQueryResponse) requestProxy(rpcClient, request, readTimeouts);
 
             ConfigResponse configResponse = new ConfigResponse();
             if (response.isSuccess()) {
+                // 如果服务端请求成功，将获取到的配置信息保存到本地
                 LocalConfigInfoProcessor.saveSnapshot(this.getName(), dataId, group, tenant, response.getContent());
+                // 构建response
                 configResponse.setContent(response.getContent());
                 String configType;
                 if (StringUtils.isNotBlank(response.getContentType())) {
@@ -1012,11 +1023,13 @@ public class ClientWorker implements Closeable {
                 }
                 configResponse.setConfigType(configType);
                 String encryptedDataKey = response.getEncryptedDataKey();
+                // 将秘钥保存到本地
                 LocalEncryptedDataKeyProcessor
                         .saveEncryptDataKeySnapshot(agent.getName(), dataId, group, tenant, encryptedDataKey);
                 configResponse.setEncryptedDataKey(encryptedDataKey);
                 return configResponse;
             } else if (response.getErrorCode() == ConfigQueryResponse.CONFIG_NOT_FOUND) {
+                // 删除本地快照
                 LocalConfigInfoProcessor.saveSnapshot(this.getName(), dataId, group, tenant, null);
                 LocalEncryptedDataKeyProcessor.saveEncryptDataKeySnapshot(agent.getName(), dataId, group, tenant, null);
                 return configResponse;
@@ -1139,7 +1152,9 @@ public class ClientWorker implements Closeable {
 
         @Override
         public boolean removeConfig(String dataId, String group, String tenant, String tag) throws NacosException {
+            // 封装请求对象
             ConfigRemoveRequest request = new ConfigRemoveRequest(dataId, group, tenant, tag);
+            // 删除
             ConfigRemoveResponse response = (ConfigRemoveResponse) requestProxy(getOneRunningClient(), request);
             return response.isSuccess();
         }

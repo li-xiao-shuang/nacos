@@ -140,8 +140,11 @@ public class NacosConfigService implements ConfigService {
     }
 
     private String getConfigInner(String tenant, String dataId, String group, long timeoutMs) throws NacosException {
+        // 判断group是否为空 为空就使用默认的group
         group = blank2defaultGroup(group);
+        // 检查参数
         ParamUtils.checkKeyParam(dataId, group);
+        // 封装返回值，执行过滤器
         ConfigResponse cr = new ConfigResponse();
 
         cr.setDataId(dataId);
@@ -149,6 +152,7 @@ public class NacosConfigService implements ConfigService {
         cr.setGroup(group);
 
         // use local config first
+        //先从本地存储的文件中读取配置
         String content = LocalConfigInfoProcessor.getFailover(worker.getAgentName(), dataId, group, tenant);
         if (content != null) {
             LOGGER.warn("[{}] [get-config] get failover ok, dataId={}, group={}, tenant={}, config={}",
@@ -162,6 +166,7 @@ public class NacosConfigService implements ConfigService {
             return content;
         }
 
+        // 从服务端获取数据
         try {
             ConfigResponse response = worker.getServerConfig(dataId, group, tenant, timeoutMs, false);
             cr.setContent(response.getContent());
@@ -178,6 +183,7 @@ public class NacosConfigService implements ConfigService {
                     worker.getAgentName(), dataId, group, tenant, ioe.toString());
         }
 
+        // 如果服务端故障获取数据失败 则从本地快照里面获取
         LOGGER.warn("[{}] [get-config] get snapshot ok, dataId={}, group={}, tenant={}, config={}",
                 worker.getAgentName(), dataId, group, tenant, ContentUtils.truncateContent(content));
         content = LocalConfigInfoProcessor.getSnapshot(worker.getAgentName(), dataId, group, tenant);
@@ -201,8 +207,11 @@ public class NacosConfigService implements ConfigService {
     }
 
     private boolean removeConfigInner(String tenant, String dataId, String group, String tag) throws NacosException {
+        // 如果group为空就返回默认的 DEFAULT_GROUP
         group = blank2defaultGroup(group);
+        //参数校验
         ParamUtils.checkKeyParam(dataId, group);
+        // 调用删除逻辑
         return worker.removeConfig(dataId, group, tenant, tag);
     }
 

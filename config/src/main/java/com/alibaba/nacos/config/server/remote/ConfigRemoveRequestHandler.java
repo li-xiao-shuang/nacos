@@ -64,19 +64,24 @@ public class ConfigRemoveRequestHandler extends RequestHandler<ConfigRemoveReque
         String tag = configRemoveRequest.getTag();
         
         try {
+            // 检查参数
             ParamUtils.checkTenant(tenant);
             ParamUtils.checkParam(dataId, group, "datumId", "rm");
             ParamUtils.checkParam(tag);
             
             String clientIp = meta.getClientIp();
             if (StringUtils.isBlank(tag)) {
+                // 操作config_info 表
                 persistService.removeConfigInfo(dataId, group, tenant, clientIp, null);
             } else {
+                // 操作config_info_tag 表
                 persistService.removeConfigInfoTag(dataId, group, tenant, tag, clientIp, null);
             }
             final Timestamp time = TimeUtils.getCurrentTime();
+            //打印log
             ConfigTraceService.logPersistenceEvent(dataId, group, tenant, null, time.getTime(), clientIp,
                     ConfigTraceService.PERSISTENCE_EVENT_REMOVE, null);
+            // 发送配置变更事件
             ConfigChangePublisher
                     .notifyConfigChange(new ConfigDataChangeEvent(false, dataId, group, tenant, tag, time.getTime()));
             return ConfigRemoveResponse.buildSuccessResponse();

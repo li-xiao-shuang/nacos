@@ -481,10 +481,14 @@ public class ExternalStoragePersistServiceImpl implements PersistService {
             @Override
             public Boolean doInTransaction(TransactionStatus status) {
                 try {
+                    // 查找出要删除的配置
                     ConfigInfo configInfo = findConfigInfo(dataId, group, tenant);
                     if (configInfo != null) {
+                        // 配置不为空就删除配置
                         removeConfigInfoAtomic(dataId, group, tenant, srcIp, srcUser);
+                        // 删除关联tag
                         removeTagByIdAtomic(configInfo.getId());
+                        // 插入历史记录
                         insertConfigHistoryAtomic(configInfo.getId(), configInfo, srcIp, srcUser, time, "D");
                     }
                 } catch (CannotGetJdbcConnectionException e) {

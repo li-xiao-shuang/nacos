@@ -76,44 +76,55 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
         try {
             return getContext(request, meta, request.isNotify());
         } catch (Exception e) {
-            return ConfigQueryResponse
-                    .buildFailResponse(ResponseCode.FAIL.getCode(), e.getMessage());
+            return ConfigQueryResponse.buildFailResponse(ResponseCode.FAIL.getCode(), e.getMessage());
         }
         
     }
     
     private ConfigQueryResponse getContext(ConfigQueryRequest configQueryRequest, RequestMeta meta, boolean notify)
             throws UnsupportedEncodingException {
+        // 获取参数信息
         String dataId = configQueryRequest.getDataId();
         String group = configQueryRequest.getGroup();
         String tenant = configQueryRequest.getTenant();
         String clientIp = meta.getClientIp();
         String tag = configQueryRequest.getTag();
+        // 创建response
         ConfigQueryResponse response = new ConfigQueryResponse();
         
+        // 创建key  dataId+group+tenant
         final String groupKey = GroupKey2
                 .getKey(configQueryRequest.getDataId(), configQueryRequest.getGroup(), configQueryRequest.getTenant());
         
+        // 获取header中的 VIPSERVER_TAG
         String autoTag = configQueryRequest.getHeader(com.alibaba.nacos.api.common.Constants.VIPSERVER_TAG);
         
+        // 获取app Name
         String requestIpApp = meta.getLabels().get(CLIENT_APPNAME_HEADER);
         
+        // 通过group key 获取锁
         int lockResult = tryConfigReadLock(groupKey);
         
         boolean isBeta = false;
         boolean isSli = false;
         if (lockResult > 0) {
             //FileInputStream fis = null;
+            //如果获取到锁
             try {
                 String md5 = Constants.NULL;
                 long lastModified = 0L;
+                //获取缓存的cacheItem
                 CacheItem cacheItem = ConfigCacheService.getContentCache(groupKey);
                 if (cacheItem != null) {
+                    //判断是否是测试版本配置
                     if (cacheItem.isBeta()) {
+                        // 判断当前请求的clientIp是否是测试ip
                         if (cacheItem.getIps4Beta().contains(clientIp)) {
+                            // 如果是返回测试版本配置，查询config_info_beta表
                             isBeta = true;
                         }
                     }
+                    // 设置配置类型
                     String configType = cacheItem.getType();
                     response.setContentType((null != configType) ? configType : "text");
                 }
@@ -121,18 +132,26 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                 ConfigInfoBase configInfoBase = null;
                 PrintWriter out = null;
                 if (isBeta) {
+                    //获取测试版本配置信息
+                    // 设置MD5值为cacheItem中的MD5测试版本的值
                     md5 = cacheItem.getMd54Beta();
+                    //设置最后修改时间
                     lastModified = cacheItem.getLastModifiedTs4Beta();
+                    // 如果是独立模式运行，并且使用嵌入式存储derby,那么就直接从derby库中读取
                     if (PropertyUtil.isDirectRead()) {
                         configInfoBase = persistService.findConfigInfo4Beta(dataId, group, tenant);
                     } else {
+                        // 如果使用的是mysql，就从文件中获取数据
                         file = DiskUtil.targetBetaFile(dataId, group, tenant);
                     }
                     response.setBeta(true);
                 } else {
+                    // 获取非测试版本信息
                     if (StringUtils.isBlank(tag)) {
                         if (isUseTag(cacheItem, autoTag)) {
+                            //如果缓存的数据中包含这个tag 就获取config_info_tag的数据
                             if (cacheItem != null) {
+                                // 设置MD5值和最后修改时间
                                 if (cacheItem.tagMd5 != null) {
                                     md5 = cacheItem.tagMd5.get(autoTag);
                                 }
@@ -140,6 +159,7 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                                     lastModified = cacheItem.tagLastModifiedTs.get(autoTag);
                                 }
                             }
+                            // 判断是否能读库
                             if (PropertyUtil.isDirectRead()) {
                                 configInfoBase = persistService.findConfigInfo4Tag(dataId, group, tenant, autoTag);
                             } else {
@@ -148,6 +168,7 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                             response.setTag(URLEncoder.encode(autoTag, Constants.ENCODE));
                             
                         } else {
+                            //如果 tag 为空就获取config_info数据
                             md5 = cacheItem.getMd5();
                             lastModified = cacheItem.getLastModifiedTs();
                             if (PropertyUtil.isDirectRead()) {
@@ -155,6 +176,7 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                             } else {
                                 file = DiskUtil.targetFile(dataId, group, tenant);
                             }
+                            // 配置不存在 打印日志，给客户端返回300
                             if (configInfoBase == null && fileNotExist(file)) {
                                 // FIXME CacheItem
                                 // No longer exists. It is impossible to simply calculate the push delayed. Here, simply record it as - 1.
@@ -170,7 +192,9 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                             }
                         }
                     } else {
+                        //  如果tag不为空 获取config_info_tag表的数据
                         if (cacheItem != null) {
+                            // 设置MD5和最后修改时间
                             if (cacheItem.tagMd5 != null) {
                                 md5 = cacheItem.tagMd5.get(tag);
                             }
@@ -181,11 +205,13 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                                 }
                             }
                         }
+                        // 判断是否读库
                         if (PropertyUtil.isDirectRead()) {
                             configInfoBase = persistService.findConfigInfo4Tag(dataId, group, tenant, tag);
                         } else {
                             file = DiskUtil.targetTagFile(dataId, group, tenant, tag);
                         }
+                        // 配置不存在 给客户端返回300 code
                         if (configInfoBase == null && fileNotExist(file)) {
                             // FIXME CacheItem
                             // No longer exists. It is impossible to simply calculate the push delayed. Here, simply record it as - 1.
@@ -206,14 +232,17 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                 response.setMd5(md5);
                 
                 if (PropertyUtil.isDirectRead()) {
+                    // 从derby库中读取到了数据 ，直接设置返回值
                     response.setLastModified(lastModified);
                     response.setContent(configInfoBase.getContent());
                     response.setResultCode(ResponseCode.SUCCESS.getCode());
                     
                 } else {
                     //read from file
+                    // 需要从文件中读取数据
                     String content = null;
                     try {
+                        // 读取文件中的数据设置返回值
                         content = readFileContent(file);
                         response.setContent(content);
                         response.setLastModified(lastModified);
@@ -229,6 +258,7 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                 
                 final long delayed = System.currentTimeMillis() - lastModified;
                 
+                // 记录拉取事件
                 // TODO distinguish pull-get && push-get
                 /*
                  Otherwise, delayed cannot be used as the basis of push delay directly,
@@ -238,10 +268,11 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                         ConfigTraceService.PULL_EVENT_OK, notify ? delayed : -1, clientIp, notify);
                 
             } finally {
+                // 释放锁资源
                 releaseConfigReadLock(groupKey);
             }
         } else if (lockResult == 0) {
-            
+            // 获取锁失败，这里打印log 并且给客户端返回code 300，客户端会删除本地的快照
             // FIXME CacheItem No longer exists. It is impossible to simply calculate the push delayed. Here, simply record it as - 1.
             ConfigTraceService
                     .logPullEvent(dataId, group, tenant, requestIpApp, -1, ConfigTraceService.PULL_EVENT_NOTFOUND, -1,
