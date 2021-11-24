@@ -99,43 +99,58 @@ public class ConfigPublishRequestHandler extends RequestHandler<ConfigPublishReq
                 throw new NacosException(NacosException.NO_RIGHT, "dataId:" + dataId + " is aggr");
             }
             
+            // 创建 configInfo
             final Timestamp time = TimeUtils.getCurrentTime();
             String betaIps = request.getAdditionParam("betaIps");
             ConfigInfo configInfo = new ConfigInfo(dataId, group, tenant, appName, content);
             configInfo.setMd5(request.getCasMd5());
             configInfo.setType(type);
+            
+            // 如果测试ip为空
             if (StringUtils.isBlank(betaIps)) {
+                // 如果tag为空 操作 config_info 表
                 if (StringUtils.isBlank(tag)) {
+                    //如果MD5不为空
                     if (StringUtils.isNotBlank(request.getCasMd5())) {
+                        // cas的方式更新插入
                         boolean casSuccess = persistService
                                 .insertOrUpdateCas(srcIp, srcUser, configInfo, time, configAdvanceInfo, false);
                         if (!casSuccess) {
+                            // 如果插入或更新失败就构建失败的response
                             return ConfigPublishResponse.buildFailResponse(ResponseCode.FAIL.getCode(),
                                     "Cas publish fail,server md5 may have changed.");
                         }
                     } else {
+                        // 如果没有传入MD5 就执行执行插入、更新
                         persistService.insertOrUpdate(srcIp, srcUser, configInfo, time, configAdvanceInfo, false);
                     }
+                    // 发布配置变更事件
                     ConfigChangePublisher.notifyConfigChange(
                             new ConfigDataChangeEvent(false, dataId, group, tenant, time.getTime()));
                 } else {
+                    // 如果tag不为空 操作config_info_tag表 并且md5不为空 更新时对比MD5字段
                     if (StringUtils.isNotBlank(request.getCasMd5())) {
                         boolean casSuccess = persistService
                                 .insertOrUpdateTagCas(configInfo, tag, srcIp, srcUser, time, false);
                         if (!casSuccess) {
+                            // 如果插入或更新失败就构建失败的response
                             return ConfigPublishResponse.buildFailResponse(ResponseCode.FAIL.getCode(),
                                     "Cas publish tag config fail,server md5 may have changed.");
                         }
                     } else {
+                        // md5为空  更新不对比MD5
                         persistService.insertOrUpdateTag(configInfo, tag, srcIp, srcUser, time, false);
                         
                     }
+                    //发送配置变更事件
                     ConfigChangePublisher.notifyConfigChange(
                             new ConfigDataChangeEvent(false, dataId, group, tenant, tag, time.getTime()));
                 }
             } else {
+                // 测试ip不为空发布测试配置,只有指定ip才能获取到，操作config_info_beta 表
                 // beta publish
                 if (StringUtils.isNotBlank(request.getCasMd5())) {
+                    // 对比MD5操作
                     boolean casSuccess = persistService
                             .insertOrUpdateBetaCas(configInfo, betaIps, srcIp, srcUser, time, false);
                     if (!casSuccess) {
@@ -143,12 +158,15 @@ public class ConfigPublishRequestHandler extends RequestHandler<ConfigPublishReq
                                 "Cas publish beta config fail,server md5 may have changed.");
                     }
                 } else {
+                    // 不比较MD5的操作
                     persistService.insertOrUpdateBeta(configInfo, betaIps, srcIp, srcUser, time, false);
                     
                 }
+                // 发送配置变更事件
                 ConfigChangePublisher
                         .notifyConfigChange(new ConfigDataChangeEvent(true, dataId, group, tenant, time.getTime()));
             }
+            //发送记录log事件
             ConfigTraceService
                     .logPersistenceEvent(dataId, group, tenant, requestIpApp, time.getTime(), InetUtils.getSelfIP(),
                             ConfigTraceService.PERSISTENCE_EVENT_PUB, content);

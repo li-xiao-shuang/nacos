@@ -173,12 +173,16 @@ public class ExternalStoragePersistServiceImpl implements PersistService {
     @Override
     public void addConfigInfo(final String srcIp, final String srcUser, final ConfigInfo configInfo,
             final Timestamp time, final Map<String, Object> configAdvanceInfo, final boolean notify) {
+        //通过事务去执行sql
         boolean result = tjt.execute(status -> {
             try {
+                // 执行insert
                 long configId = addConfigInfoAtomic(-1, srcIp, srcUser, configInfo, time, configAdvanceInfo);
+                // 获取配置的tag 插入关联表
                 String configTags = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("config_tags");
                 addConfigTagsRelation(configId, configTags, configInfo.getDataId(), configInfo.getGroup(),
                         configInfo.getTenant());
+                // 插入配置的历史记录表
                 insertConfigHistoryAtomic(0, configInfo, srcIp, srcUser, time, "I");
             } catch (CannotGetJdbcConnectionException e) {
                 LogUtil.FATAL_LOG.error("[db-error] " + e.toString(), e);
@@ -261,6 +265,7 @@ public class ExternalStoragePersistServiceImpl implements PersistService {
             final Timestamp time, final Map<String, Object> configAdvanceInfo, final boolean notify) {
         return tjt.execute(status -> {
             try {
+                //先查出要更新的配置信息
                 ConfigInfo oldConfigInfo = findConfigInfo(configInfo.getDataId(), configInfo.getGroup(),
                         configInfo.getTenant());
                 String appNameTmp = oldConfigInfo.getAppName();
@@ -272,16 +277,20 @@ public class ExternalStoragePersistServiceImpl implements PersistService {
                     configInfo.setAppName(appNameTmp);
                 }
                 int rows = updateConfigInfoAtomicCas(configInfo, srcIp, srcUser, time, configAdvanceInfo);
+                //如果更新失败 可能是content的md5值不一样,说明配置已经变更
                 if (rows < 1) {
                     return Boolean.FALSE;
                 }
+                // 取出配置的tag信息，更新关联关系
                 String configTags = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("config_tags");
                 if (configTags != null) {
                     // delete all tags and then recreate
+                    // 先删除配置之前关联的tag 然后再插入新的tag
                     removeTagByIdAtomic(oldConfigInfo.getId());
                     addConfigTagsRelation(oldConfigInfo.getId(), configTags, configInfo.getDataId(),
                             configInfo.getGroup(), configInfo.getTenant());
                 }
+                //插入配置历史数据
                 insertConfigHistoryAtomic(oldConfigInfo.getId(), oldConfigInfo, srcIp, srcUser, time, "U");
             } catch (CannotGetJdbcConnectionException e) {
                 LogUtil.FATAL_LOG.error("[db-error] " + e.toString(), e);
@@ -430,6 +439,7 @@ public class ExternalStoragePersistServiceImpl implements PersistService {
         try {
             addConfigInfo(srcIp, srcUser, configInfo, time, configAdvanceInfo, notify);
         } catch (DataIntegrityViolationException ive) { // Unique constraint conflict
+            // 插入失败直接更新 不对比MD5
             updateConfigInfo(configInfo, srcIp, srcUser, time, configAdvanceInfo, notify);
         }
     }
@@ -444,9 +454,11 @@ public class ExternalStoragePersistServiceImpl implements PersistService {
     public boolean insertOrUpdateCas(String srcIp, String srcUser, ConfigInfo configInfo, Timestamp time,
             Map<String, Object> configAdvanceInfo, boolean notify) {
         try {
+            // 先执行插入 如果抛出异常 就执行更新
             addConfigInfo(srcIp, srcUser, configInfo, time, configAdvanceInfo, notify);
             return true;
         } catch (DataIntegrityViolationException ive) { // Unique constraint conflict
+            // 通过cas方式比较MD5做更新
             return updateConfigInfoCas(configInfo, srcIp, srcUser, time, configAdvanceInfo, notify);
         }
     }
@@ -2044,19 +2056,22 @@ public class ExternalStoragePersistServiceImpl implements PersistService {
     @Override
     public long addConfigInfoAtomic(final long configId, final String srcIp, final String srcUser,
             final ConfigInfo configInfo, final Timestamp time, Map<String, Object> configAdvanceInfo) {
+        // 如果appName、tenantTmp 为空就设置为""
         final String appNameTmp =
                 StringUtils.isBlank(configInfo.getAppName()) ? StringUtils.EMPTY : configInfo.getAppName();
         final String tenantTmp =
                 StringUtils.isBlank(configInfo.getTenant()) ? StringUtils.EMPTY : configInfo.getTenant();
-        
+        // 取出配置的其他信息
         final String desc = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("desc");
         final String use = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("use");
         final String effect = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("effect");
         final String type = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("type");
         final String schema = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("schema");
         
+        // 生成content 的md5
         final String md5Tmp = MD5Utils.md5Hex(configInfo.getContent(), Constants.ENCODE);
         
+        // 用户保存自动生成的id
         KeyHolder keyHolder = new GeneratedKeyHolder();
         
         final String sql =
@@ -2086,6 +2101,7 @@ public class ExternalStoragePersistServiceImpl implements PersistService {
                     return ps;
                 }
             }, keyHolder);
+            // 获取插入数据的id,为nul就抛出异常 否则就返回id
             Number nu = keyHolder.getKey();
             if (nu == null) {
                 throw new IllegalArgumentException("insert config_info fail");
@@ -2237,6 +2253,7 @@ public class ExternalStoragePersistServiceImpl implements PersistService {
     
     private int updateConfigInfoAtomicCas(final ConfigInfo configInfo, final String srcIp, final String srcUser,
             final Timestamp time, Map<String, Object> configAdvanceInfo) {
+        // 获取配置信息
         String appNameTmp = StringUtils.isBlank(configInfo.getAppName()) ? StringUtils.EMPTY : configInfo.getAppName();
         String tenantTmp = StringUtils.isBlank(configInfo.getTenant()) ? StringUtils.EMPTY : configInfo.getTenant();
         final String md5Tmp = MD5Utils.md5Hex(configInfo.getContent(), Constants.ENCODE);
@@ -2247,6 +2264,7 @@ public class ExternalStoragePersistServiceImpl implements PersistService {
         String schema = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("schema");
         
         try {
+            // 通过配置的MD5来做更新
             return jt.update("UPDATE config_info SET content=?, md5 = ?, src_ip=?,src_user=?,gmt_modified=?,"
                             + "app_name=?,c_desc=?,c_use=?,effect=?,type=?,c_schema=? "
                             + "WHERE data_id=? AND group_id=? AND tenant_id=? AND (md5=? OR md5 IS NULL OR md5='')",
