@@ -70,14 +70,18 @@ public class NacosConfigService implements ConfigService {
 
     private final ConfigFilterChainManager configFilterChainManager;
 
+    // NacosConfigService 构造方法，通过Properties 创建
     public NacosConfigService(Properties properties) throws NacosException {
+        // 检查上下文路径
         ValidatorUtils.checkInitParam(properties);
-
+        //解析Namespace
         initNamespace(properties);
+        // 加载spi的filter实现
         this.configFilterChainManager = new ConfigFilterChainManager(properties);
+        // 初始化服务信息
         ServerListManager serverListManager = new ServerListManager(properties);
         serverListManager.start();
-
+        //构建client
         this.worker = new ClientWorker(this.configFilterChainManager, serverListManager, properties);
         // will be deleted in 2.0 later versions
         agent = new ServerHttpAgent(serverListManager);
@@ -98,6 +102,7 @@ public class NacosConfigService implements ConfigService {
     public String getConfigAndSignListener(String dataId, String group, long timeoutMs, Listener listener)
             throws NacosException {
         String content = getConfig(dataId, group, timeoutMs);
+        // 添加带有内容的监听
         worker.addTenantListenersWithContent(dataId, group, content, Arrays.asList(listener));
         return content;
     }

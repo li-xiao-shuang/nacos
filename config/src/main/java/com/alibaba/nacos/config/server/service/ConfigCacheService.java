@@ -48,6 +48,7 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.DEFAULT_LOG;
 
 /**
  * Config service.
+ * 配置缓存服务
  *
  * @author Nacos
  */
@@ -545,17 +546,22 @@ public class ConfigCacheService {
     }
     
     public static String getContentMd5(String groupKey, String ip, String tag) {
+        // 获取服务端缓存的配置数据
         CacheItem item = CACHE.get(groupKey);
         if (item != null && item.isBeta) {
+            // 如果配置不为空 并且配置是测试配置
             if (item.ips4Beta.contains(ip)) {
+                // 如果客户端ip是灰度的ip ，就返回beta的MD5
                 return item.md54Beta;
             }
         }
+        // 判断是否是tag 的 MD5
         if (item != null && item.tagMd5 != null && item.tagMd5.size() > 0) {
             if (StringUtils.isNotBlank(tag) && item.tagMd5.containsKey(tag)) {
                 return item.tagMd5.get(tag);
             }
         }
+        // 返回正常的MD5
         return (null != item) ? item.md5 : Constants.NULL;
     }
     
@@ -617,7 +623,9 @@ public class ConfigCacheService {
     }
     
     public static boolean isUptodate(String groupKey, String md5, String ip, String tag) {
+        // 获取服务端的MD5值
         String serverMd5 = ConfigCacheService.getContentMd5(groupKey, ip, tag);
+        // 和客户端传过来的MD5对比是否相等
         return StringUtils.equals(md5, serverMd5);
     }
     

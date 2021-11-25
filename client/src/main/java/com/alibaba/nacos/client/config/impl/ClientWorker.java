@@ -112,6 +112,7 @@ public class ClientWorker implements Closeable {
 
     /**
      * groupKey -> cacheData.
+     * 配置监听管理器集合
      */
     private final AtomicReference<Map<String, CacheData>> cacheMap = new AtomicReference<>(new HashMap<>());
 
@@ -162,11 +163,14 @@ public class ClientWorker implements Closeable {
             throws NacosException {
         group = blank2defaultGroup(group);
         String tenant = agent.getTenant();
+        // 给配置添加或者获取一个监听器管理
         CacheData cache = addCacheDataIfAbsent(dataId, group, tenant);
         synchronized (cache) {
+            // 将监听器添加到管理对象CacheData内部
             for (Listener listener : listeners) {
                 cache.addListener(listener);
             }
+            //唤醒监听队列
             cache.setSyncWithServer(false);
             agent.notifyListenConfig();
         }
@@ -184,15 +188,21 @@ public class ClientWorker implements Closeable {
      */
     public void addTenantListenersWithContent(String dataId, String group, String content,
             List<? extends Listener> listeners) throws NacosException {
+        // 如果group为空 转换为默认的group
         group = blank2defaultGroup(group);
+        // 获取租户 namespace
         String tenant = agent.getTenant();
+        // 创建并获取一个配置的监听管理对象CacheData
         CacheData cache = addCacheDataIfAbsent(dataId, group, tenant);
         synchronized (cache) {
+            //将配置内容添加到监听管理内
             cache.setContent(content);
+            // 添加监听器到监听管理内部
             for (Listener listener : listeners) {
                 cache.addListener(listener);
             }
             cache.setSyncWithServer(false);
+            //唤醒监听配置
             agent.notifyListenConfig();
         }
 
@@ -255,6 +265,7 @@ public class ClientWorker implements Closeable {
     }
 
     void removeCache(String dataId, String group, String tenant) {
+        // 将配置监听从监听管理器集合中移除
         String groupKey = GroupKey.getKeyTenant(dataId, group, tenant);
         synchronized (cacheMap) {
             Map<String, CacheData> copy = new HashMap<String, CacheData>(cacheMap.get());
@@ -352,12 +363,15 @@ public class ClientWorker implements Closeable {
      * @return cache data
      */
     public CacheData addCacheDataIfAbsent(String dataId, String group, String tenant) throws NacosException {
+        // 获取cacheData 如果不为空直接返回
         CacheData cache = getCache(dataId, group, tenant);
         if (null != cache) {
             return cache;
         }
+        // 如果不存在就添加一个cacheData
         String key = GroupKey.getKeyTenant(dataId, group, tenant);
         synchronized (cacheMap) {
+            // 在做一次检查是否为空
             CacheData cacheFromMap = getCache(dataId, group, tenant);
             // multiple listeners on the same dataid+group and race condition,so
             // double check again
@@ -367,22 +381,24 @@ public class ClientWorker implements Closeable {
                 // reset so that server not hang this check
                 cache.setInitializing(true);
             } else {
+                // 创建一个cacheData对象
                 cache = new CacheData(configFilterChainManager, agent.getName(), dataId, group, tenant);
                 int taskId = cacheMap.get().size() / (int) ParamUtil.getPerTaskConfigSize();
                 cache.setTaskId(taskId);
                 // fix issue # 1317
                 if (enableRemoteSyncConfig) {
+                    // 如果开启了远程配置同步 那么将content设置为从服务端获取的值
                     ConfigResponse response = getServerConfig(dataId, group, tenant, 3000L, false);
                     cache.setContent(response.getContent());
                 }
             }
-
+            // 添加到cacheMap中
             Map<String, CacheData> copy = new HashMap<String, CacheData>(this.cacheMap.get());
             copy.put(key, cache);
             cacheMap.set(copy);
         }
         LOGGER.info("[{}] [subscribe] {}", agent.getName(), key);
-
+        // 统计监听配置数量
         MetricsMonitor.getListenConfigCountMonitor().set(cacheMap.get().size());
 
         return cache;
@@ -475,16 +491,20 @@ public class ClientWorker implements Closeable {
     }
 
     private void refreshContentAndCheck(String groupKey, boolean notify) {
+        // 如果配置监听管理集合里面包含这个groupKey
         if (cacheMap.get() != null && cacheMap.get().containsKey(groupKey)) {
             CacheData cache = cacheMap.get().get(groupKey);
+            // 刷新内容并检查
             refreshContentAndCheck(cache, notify);
         }
     }
 
     private void refreshContentAndCheck(CacheData cacheData, boolean notify) {
         try {
+            // 从服务端获取配置信息
             ConfigResponse response = getServerConfig(cacheData.dataId, cacheData.group, cacheData.tenant, 3000L,
                     notify);
+            // 将最新的值赋值给CacheData
             cacheData.setContent(response.getContent());
             cacheData.setEncryptedDataKey(response.getEncryptedDataKey());
             if (null != response.getConfigType()) {
@@ -495,6 +515,7 @@ public class ClientWorker implements Closeable {
                         agent.getName(), cacheData.dataId, cacheData.group, cacheData.tenant, cacheData.getMd5(),
                         ContentUtils.truncateContent(response.getContent()), response.getConfigType());
             }
+            // 然后再检查一下MD5和每个监听器内部的md5是否相等
             cacheData.checkListenerMd5();
         } catch (Exception e) {
             LOGGER.error("refresh content and check md5 fail ,dataId={},group={},tenant={} ", cacheData.dataId,
@@ -737,13 +758,18 @@ public class ClientWorker implements Closeable {
 
         @Override
         public void startInternal() throws NacosException {
+            // 创建一个延迟执行的线程池，延迟0毫秒执行。这个任务会在后台一直跑，在客户端关闭的时候会停止这个线程池。
             executor.schedule(() -> {
+                // 如果线程池没有执行关闭，并且任务没有都完成就一直循环执行
                 while (!executor.isShutdown() && !executor.isTerminated()) {
                     try {
+                        // 等待5秒钟 看listenExecutebell队列中是否有数据
                         listenExecutebell.poll(5L, TimeUnit.SECONDS);
+                        // 如果线程池执行关闭了或者所有的任务全部都执行完毕了，就不执行监听逻辑了
                         if (executor.isShutdown() || executor.isTerminated()) {
                             continue;
                         }
+                        //执行配置监听逻辑
                         executeConfigListen();
                     } catch (Exception e) {
                         LOGGER.error("[ rpc listen execute ] [rpc listen] exception", e);
@@ -760,21 +786,26 @@ public class ClientWorker implements Closeable {
 
         @Override
         public void notifyListenConfig() {
+            // 插入一个object对象到监听队列
             listenExecutebell.offer(bellItem);
         }
 
         @Override
         public void executeConfigListen() {
 
+            // 创建两个map，listenCachesMap 用来存储需要监听的配置监听管理器，removeListenCachesMap用来存储需要移除监听的配置监听管理器
             Map<String, List<CacheData>> listenCachesMap = new HashMap<String, List<CacheData>>(16);
             Map<String, List<CacheData>> removeListenCachesMap = new HashMap<String, List<CacheData>>(16);
             long now = System.currentTimeMillis();
+            // 如果最近一次当前时间和最近的一次同步时间相差大于5分钟就为true，用来控制是否执行配置的所有监听器
             boolean needAllSync = now - lastAllSyncTime >= ALL_SYNC_INTERNAL;
+            // 遍历所有添加了监听器的配置监听管理器
             for (CacheData cache : cacheMap.get().values()) {
 
                 synchronized (cache) {
 
                     //check local listeners consistent.
+                    // isSyncWithServer 一般为false
                     if (cache.isSyncWithServer()) {
                         cache.checkListenerMd5();
                         if (!needAllSync) {
@@ -782,20 +813,27 @@ public class ClientWorker implements Closeable {
                         }
                     }
 
+                    // 如果监听管理器内的监听器不为空，就将当前的监听管理器添加到listenCachesMap中
                     if (!CollectionUtils.isEmpty(cache.getListeners())) {
                         //get listen  config
+                        // 如果不是用本地的配置
                         if (!cache.isUseLocalConfigInfo()) {
+                            // 从创建的listenCachesMap中获取指定taskId 的cachedata list
                             List<CacheData> cacheDatas = listenCachesMap.get(String.valueOf(cache.getTaskId()));
                             if (cacheDatas == null) {
+                                // 如果没有获取到 就初始化一个空的容器添加到listenCachesMap中，taskId作为key，taskId是rpcClient的label
                                 cacheDatas = new LinkedList<>();
                                 listenCachesMap.put(String.valueOf(cache.getTaskId()), cacheDatas);
                             }
+                            // 将当前的监听管理器CacheData添加到刚刚初始化的空容器中
                             cacheDatas.add(cache);
 
                         }
                     } else if (CollectionUtils.isEmpty(cache.getListeners())) {
-
+                        //如果监听管理器中的listener为空，就将CacheData添加到removeListenCachesMap中
+                        // 如果不使用本地配置
                         if (!cache.isUseLocalConfigInfo()) {
+                            // 先get  没有就插入， 找出需要移除的配置监听
                             List<CacheData> cacheDatas = removeListenCachesMap.get(String.valueOf(cache.getTaskId()));
                             if (cacheDatas == null) {
                                 cacheDatas = new LinkedList<>();
@@ -809,64 +847,84 @@ public class ClientWorker implements Closeable {
 
             }
 
+            // 是否有变更的key
             boolean hasChangedKeys = false;
 
+            // 如果需要监听的配置监听管理器不为空
             if (!listenCachesMap.isEmpty()) {
+                // 遍历所有需要监听的CacheData
                 for (Map.Entry<String, List<CacheData>> entry : listenCachesMap.entrySet()) {
+                    // 任务id
                     String taskId = entry.getKey();
+                    // 创建一个容量是listenCachesMap两倍的map,存储groupKey对应的配置的最后修改时间
                     Map<String, Long> timestampMap = new HashMap<>(listenCachesMap.size() * 2);
 
+                    // 获取taskId下的所有配置监听管理器，添加最后修改时间到timestampMap中,key为dataId+Group+tenant
                     List<CacheData> listenCaches = entry.getValue();
                     for (CacheData cacheData : listenCaches) {
                         timestampMap.put(GroupKey.getKeyTenant(cacheData.dataId, cacheData.group, cacheData.tenant),
                                 cacheData.getLastModifiedTs().longValue());
                     }
-
+                    // 通过有监听器的CacheData构建一个批量配置变更请求对象
                     ConfigBatchListenRequest configChangeListenRequest = buildConfigRequest(listenCaches);
+                    // 设置监听为true,为false的时候，服务端会移除监听
                     configChangeListenRequest.setListen(true);
                     try {
+                        // 创建名字包含taskId的rpc客户端
                         RpcClient rpcClient = ensureRpcClient(taskId);
                         ConfigChangeBatchListenResponse configChangeBatchListenResponse = (ConfigChangeBatchListenResponse) requestProxy(
                                 rpcClient, configChangeListenRequest);
+                        // 如果返回值不为空
                         if (configChangeBatchListenResponse != null && configChangeBatchListenResponse.isSuccess()) {
-
+                            // 创建变更key集合
                             Set<String> changeKeys = new HashSet<String>();
                             //handle changed keys,notify listener
+                            // 处理变更的配置
                             if (!CollectionUtils.isEmpty(configChangeBatchListenResponse.getChangedConfigs())) {
+                                // 设置有配置变更标识
                                 hasChangedKeys = true;
                                 for (ConfigChangeBatchListenResponse.ConfigContext changeConfig : configChangeBatchListenResponse
                                         .getChangedConfigs()) {
+                                    // 获取变更的groupkey 存到 changeKeys
                                     String changeKey = GroupKey
                                             .getKeyTenant(changeConfig.getDataId(), changeConfig.getGroup(),
                                                     changeConfig.getTenant());
                                     changeKeys.add(changeKey);
+                                    // 获取对应的监听管理器的isInitializing字段
                                     boolean isInitializing = cacheMap.get().get(changeKey).isInitializing();
+                                    // 刷新配置的时候传入false
                                     refreshContentAndCheck(changeKey, !isInitializing);
                                 }
 
                             }
 
                             //handler content configs
+                            // 遍历配置监听管理器
                             for (CacheData cacheData : listenCaches) {
+                                // 获取到groupKey
                                 String groupKey = GroupKey
                                         .getKeyTenant(cacheData.dataId, cacheData.group, cacheData.getTenant());
+                                // 查看key对应的配置是否变更
                                 if (!changeKeys.contains(groupKey)) {
                                     //sync:cache data md5 = server md5 && cache data md5 = all listeners md5.
+                                    // 如果groupKey的配置没有变更
                                     synchronized (cacheData) {
                                         if (!cacheData.getListeners().isEmpty()) {
-
+                                            // 监听器不为空，取出对应groupKey的最后修改时间
                                             Long previousTimesStamp = timestampMap.get(groupKey);
                                             if (previousTimesStamp != null) {
+                                                // 比较并替换修改时间
                                                 if (!cacheData.getLastModifiedTs().compareAndSet(previousTimesStamp,
                                                         System.currentTimeMillis())) {
                                                     continue;
                                                 }
                                             }
+                                            // 标记缓存数据与服务器同步了
                                             cacheData.setSyncWithServer(true);
                                         }
                                     }
                                 }
-
+                                // 设置初始化字段为false
                                 cacheData.setInitializing(false);
                             }
 
@@ -883,19 +941,26 @@ public class ClientWorker implements Closeable {
                 }
             }
 
+            // 如果要移除的监听管理器不为空
             if (!removeListenCachesMap.isEmpty()) {
                 for (Map.Entry<String, List<CacheData>> entry : removeListenCachesMap.entrySet()) {
+                    // 遍历集合 取出taskId、要移除的监听管理器集合
                     String taskId = entry.getKey();
                     List<CacheData> removeListenCaches = entry.getValue();
+                    // 构建配置变更请求
                     ConfigBatchListenRequest configChangeListenRequest = buildConfigRequest(removeListenCaches);
+                    // 标记为false 服务端会移除监听
                     configChangeListenRequest.setListen(false);
                     try {
+                        // 通过taskId获取rpcClient、并且访问服务端
                         RpcClient rpcClient = ensureRpcClient(taskId);
                         boolean removeSuccess = unListenConfigChange(rpcClient, configChangeListenRequest);
                         if (removeSuccess) {
+                            // 如果移除成功
                             for (CacheData cacheData : removeListenCaches) {
                                 synchronized (cacheData) {
                                     if (cacheData.getListeners().isEmpty()) {
+                                        // 如果配置的监听器也为空
                                         ClientWorker.this
                                                 .removeCache(cacheData.dataId, cacheData.group, cacheData.tenant);
                                     }
@@ -914,6 +979,7 @@ public class ClientWorker implements Closeable {
                 }
             }
 
+            // 同步配置的时间更新
             if (needAllSync) {
                 lastAllSyncTime = now;
             }
@@ -960,7 +1026,7 @@ public class ClientWorker implements Closeable {
          * @return request.
          */
         private ConfigBatchListenRequest buildConfigRequest(List<CacheData> caches) {
-
+            // 将所有需要监听的配置添加到request中
             ConfigBatchListenRequest configChangeListenRequest = new ConfigBatchListenRequest();
             for (CacheData cacheData : caches) {
                 configChangeListenRequest.addConfigListenContext(cacheData.group, cacheData.dataId, cacheData.tenant,
@@ -997,7 +1063,7 @@ public class ClientWorker implements Closeable {
             request.putHeader(NOTIFY_HEADER, String.valueOf(notify));
             // 获取一个正在运行的客户端
             RpcClient rpcClient = getOneRunningClient();
-            //  notify 为true
+            //  notify 正常为true , 监听配置变更后刷新配置为false
             if (notify) {
                 // 从cacheMap获取 key为dataId+group+tenant 的值
                 CacheData cacheData = cacheMap.get().get(GroupKey.getKeyTenant(dataId, group, tenant));

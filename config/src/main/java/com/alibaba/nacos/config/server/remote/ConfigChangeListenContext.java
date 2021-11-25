@@ -29,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * config change listen context.
+ * 配置监听上下文
  *
  * @author liuzunfei
  * @version $Id: ConfigChangeListenContext.java, v 0.1 2020年07月20日 1:37 PM liuzunfei Exp $
@@ -54,6 +55,7 @@ public class ConfigChangeListenContext {
      */
     public synchronized void addListen(String groupKey, String md5, String connectionId) {
         // 1.add groupKeyContext
+        // 添加groupkey和connectionId的映射
         Set<String> listenClients = groupKeyContext.get(groupKey);
         if (listenClients == null) {
             groupKeyContext.putIfAbsent(groupKey, new HashSet<String>());
@@ -62,6 +64,7 @@ public class ConfigChangeListenContext {
         listenClients.add(connectionId);
         
         // 2.add connectionIdContext
+        // 添加connectionId 和 groupKey、MD5的映射
         HashMap<String, String> groupKeys = connectionIdContext.get(connectionId);
         if (groupKeys == null) {
             connectionIdContext.putIfAbsent(connectionId, new HashMap<String, String>(16));
@@ -80,6 +83,7 @@ public class ConfigChangeListenContext {
     public synchronized void removeListen(String groupKey, String connectionId) {
         
         //1. remove groupKeyContext
+        // 移除groupKey与connectionId的关联
         Set<String> connectionIds = groupKeyContext.get(groupKey);
         if (connectionIds != null) {
             connectionIds.remove(connectionId);
@@ -89,6 +93,7 @@ public class ConfigChangeListenContext {
         }
         
         //2.remove connectionIdContext
+        // 移除connectionId 与 groupKey的关联
         HashMap<String, String> groupKeys = connectionIdContext.get(connectionId);
         if (groupKeys != null) {
             groupKeys.remove(groupKey);

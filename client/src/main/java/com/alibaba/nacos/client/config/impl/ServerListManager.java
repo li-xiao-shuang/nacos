@@ -189,8 +189,10 @@ public class ServerListManager implements Closeable {
     
     public ServerListManager(Properties properties) throws NacosException {
         this.isStarted = false;
+        // 获取服务地址和namespace
         this.serverAddrsStr = properties.getProperty(PropertyKeyConst.SERVER_ADDR);
         String namespace = properties.getProperty(PropertyKeyConst.NAMESPACE);
+        // 初始化参数
         initParam(properties);
         
         if (StringUtils.isNotEmpty(serverAddrsStr)) {

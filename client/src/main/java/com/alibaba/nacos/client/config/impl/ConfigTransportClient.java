@@ -251,7 +251,7 @@ public abstract class ConfigTransportClient {
             }, 0, this.securityInfoRefreshIntervalMills, TimeUnit.MILLISECONDS);
             
         }
-        
+        // 执行配置监听
         startInternal();
     }
     

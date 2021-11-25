@@ -50,26 +50,35 @@ public class ConfigChangeBatchListenRequestHandler
     @Secured(action = ActionTypes.READ, parser = ConfigResourceParser.class)
     public ConfigChangeBatchListenResponse handle(ConfigBatchListenRequest configChangeListenRequest, RequestMeta meta)
             throws NacosException {
+        //获取连接id
         String connectionId = StringPool.get(meta.getConnectionId());
+        // 获取vipserver tag
         String tag = configChangeListenRequest.getHeader(Constants.VIPSERVER_TAG);
-        
+        //构建response对象
         ConfigChangeBatchListenResponse configChangeBatchListenResponse = new ConfigChangeBatchListenResponse();
         for (ConfigBatchListenRequest.ConfigListenContext listenContext : configChangeListenRequest
                 .getConfigListenContexts()) {
+            // 获取groupKey
             String groupKey = GroupKey2
                     .getKey(listenContext.getDataId(), listenContext.getGroup(), listenContext.getTenant());
+            // 使用字符串池减少内存的分配
             groupKey = StringPool.get(groupKey);
             
             String md5 = StringPool.get(listenContext.getMd5());
             
+            // 判断是否监听配置变更,否则将移除监听
             if (configChangeListenRequest.isListen()) {
+                //添加对配置的监听
                 configChangeListenContext.addListen(groupKey, md5, connectionId);
+                // 判断配置是否变更 对比客户端和服务端的md5值
                 boolean isUptoDate = ConfigCacheService.isUptodate(groupKey, md5, meta.getClientIp(), tag);
                 if (!isUptoDate) {
+                    // 如果配置不相等,封装response 告诉客户端哪个配置变更了
                     configChangeBatchListenResponse.addChangeConfig(listenContext.getDataId(), listenContext.getGroup(),
                             listenContext.getTenant());
                 }
             } else {
+                // 移除监听
                 configChangeListenContext.removeListen(groupKey, connectionId);
             }
         }
