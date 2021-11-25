@@ -258,7 +258,7 @@ public class CacheData {
     void checkListenerMd5() {
         for (ManagerListenerWrap wrap : listeners) {
             if (!md5.equals(wrap.lastCallMd5)) {
-                // 如果MD5和监听器内部的MD5不相等
+                // 如果MD5和监听器内部的MD5不相等,通知监听器
                 safeNotifyListener(dataId, group, content, type, md5, encryptedDataKey, wrap);
             }
         }
