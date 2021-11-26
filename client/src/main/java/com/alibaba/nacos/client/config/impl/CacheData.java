@@ -278,6 +278,7 @@ public class CacheData {
     
     private void safeNotifyListener(final String dataId, final String group, final String content, final String type,
             final String md5, final String encryptedDataKey, final ManagerListenerWrap listenerWrap) {
+        // 获取到监听器
         final Listener listener = listenerWrap.listener;
         if (listenerWrap.inNotifying) {
             LOGGER.warn(
@@ -285,11 +286,13 @@ public class CacheData {
                     name, dataId, group, md5, listener);
             return;
         }
+        // 包装一个任务
         Runnable job = () -> {
             long start = System.currentTimeMillis();
             ClassLoader myClassLoader = Thread.currentThread().getContextClassLoader();
             ClassLoader appClassLoader = listener.getClass().getClassLoader();
             try {
+                // 如果listener 是AbstractSharedListener的类型 就将dataId、group放入AbstractSharedListener中
                 if (listener instanceof AbstractSharedListener) {
                     AbstractSharedListener adapter = (AbstractSharedListener) listener;
                     adapter.fillContext(dataId, group);
@@ -299,7 +302,7 @@ public class CacheData {
                 // the specific webapp to avoid exceptions or misuses when calling the spi interface in
                 // the callback method (this problem occurs only in multi-application deployment).
                 Thread.currentThread().setContextClassLoader(appClassLoader);
-                
+                // 构建response 执行filter
                 ConfigResponse cr = new ConfigResponse();
                 cr.setDataId(dataId);
                 cr.setGroup(group);
@@ -307,7 +310,9 @@ public class CacheData {
                 cr.setEncryptedDataKey(encryptedDataKey);
                 configFilterChainManager.doFilter(null, cr);
                 String contentTmp = cr.getContent();
+                // 设置已通知
                 listenerWrap.inNotifying = true;
+                // 调用listener的receiveConfigInfo方法
                 listener.receiveConfigInfo(contentTmp);
                 // compare lastContent and content
                 if (listener instanceof AbstractConfigChangeListener) {
