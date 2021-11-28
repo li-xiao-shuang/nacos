@@ -52,6 +52,7 @@ public class NotifyCenter {
     
     private static final AtomicBoolean CLOSED = new AtomicBoolean(false);
     
+    // 创建发布者工厂函数
     private static final EventPublisherFactory DEFAULT_PUBLISHER_FACTORY;
     
     private static final NotifyCenter INSTANCE = new NotifyCenter();
@@ -65,6 +66,7 @@ public class NotifyCenter {
      */
     private final Map<String, EventPublisher> publisherMap = new ConcurrentHashMap<>(16);
     
+    // 初始化统一通知中心
     static {
         // Internal ArrayBlockingQueue buffer size. For applications with high write throughput,
         // this value needs to be increased appropriately. default value is 16384
@@ -75,6 +77,7 @@ public class NotifyCenter {
         String shareBufferSizeProperty = "nacos.core.notify.share-buffer-size";
         shareBufferSize = Integer.getInteger(shareBufferSizeProperty, 1024);
         
+        // 加载默认的事件发布者类型
         final Collection<EventPublisher> publishers = NacosServiceLoader.load(EventPublisher.class);
         Iterator<EventPublisher> iterator = publishers.iterator();
         
@@ -84,6 +87,7 @@ public class NotifyCenter {
             clazz = DefaultPublisher.class;
         }
         
+        // 定义创建事件发布者函数
         DEFAULT_PUBLISHER_FACTORY = (cls, buffer) -> {
             try {
                 EventPublisher publisher = clazz.newInstance();
@@ -104,7 +108,7 @@ public class NotifyCenter {
         } catch (Throwable ex) {
             LOGGER.error("Service class newInstance has error : ", ex);
         }
-        
+        // 添加虚拟机关闭钩子
         ThreadUtils.addShutdownHook(NotifyCenter::shutdown);
     }
     

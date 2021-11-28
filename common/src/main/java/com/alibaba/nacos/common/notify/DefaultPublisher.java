@@ -173,6 +173,7 @@ public class DefaultPublisher extends Thread implements EventPublisher {
     void receiveEvent(Event event) {
         final long currentEventSequence = event.sequence();
         
+        // 判断是否有订阅者
         if (!hasSubscriber()) {
             LOGGER.warn("[NotifyCenter] the {} is lost, because there is no subscriber.", event);
             return;

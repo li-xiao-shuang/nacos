@@ -87,13 +87,14 @@ public class RpcConfigChangeNotifier extends Subscriber<LocalDataChangeEvent> {
      */
     public void configDataChanged(String groupKey, String dataId, String group, String tenant, boolean isBeta,
             List<String> betaIps, String tag) {
-        
+        // 取出groupKey映射的connectionId集合
         Set<String> listeners = configChangeListenContext.getListeners(groupKey);
         if (CollectionUtils.isEmpty(listeners)) {
             return;
         }
         int notifyClientCount = 0;
         for (final String client : listeners) {
+            // 通过连接管理器取出对应id的连接
             Connection connection = connectionManager.getConnection(client);
             if (connection == null) {
                 continue;
@@ -102,6 +103,7 @@ public class RpcConfigChangeNotifier extends Subscriber<LocalDataChangeEvent> {
             //beta ips check.
             String clientIp = connection.getMetaInfo().getClientIp();
             String clientTag = connection.getMetaInfo().getTag();
+            // 如果是灰度配置 并且 测试ip不包含clientIp 就跳过
             if (isBeta && betaIps != null && !betaIps.contains(clientIp)) {
                 continue;
             }
@@ -109,7 +111,7 @@ public class RpcConfigChangeNotifier extends Subscriber<LocalDataChangeEvent> {
             if (StringUtils.isNotBlank(tag) && !tag.equals(clientTag)) {
                 continue;
             }
-
+            // 构建配置变更request
             ConfigChangeNotifyRequest notifyRequest = ConfigChangeNotifyRequest.build(dataId, group, tenant);
 
             RpcPushTask rpcPushRetryTask = new RpcPushTask(notifyRequest, 50, client, clientIp,
