@@ -110,6 +110,7 @@ public class NacosNamingService implements NamingService {
     
     @Override
     public void registerInstance(String serviceName, String ip, int port) throws NacosException {
+        // 注册一个服务  默认集群为DEFAULT
         registerInstance(serviceName, ip, port, Constants.DEFAULT_CLUSTER_NAME);
     }
     
@@ -126,6 +127,7 @@ public class NacosNamingService implements NamingService {
     @Override
     public void registerInstance(String serviceName, String groupName, String ip, int port, String clusterName)
             throws NacosException {
+        // 创建一个Instance对象
         Instance instance = new Instance();
         instance.setIp(ip);
         instance.setPort(port);
@@ -141,6 +143,7 @@ public class NacosNamingService implements NamingService {
     
     @Override
     public void registerInstance(String serviceName, String groupName, Instance instance) throws NacosException {
+        // 检查参数
         NamingUtils.checkInstanceIsLegal(instance);
         clientProxy.registerService(serviceName, groupName, instance);
     }

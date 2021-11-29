@@ -46,8 +46,10 @@ public class InstanceRequestHandler extends RequestHandler<InstanceRequest, Inst
     @Override
     @Secured(action = ActionTypes.WRITE, parser = NamingResourceParser.class)
     public InstanceResponse handle(InstanceRequest request, RequestMeta meta) throws NacosException {
+        // 获取参数 构造service 对象
         Service service = Service
                 .newService(request.getNamespace(), request.getGroupName(), request.getServiceName(), true);
+        // 判断服务端请求   是注册实例 还是 注销实例
         switch (request.getType()) {
             case NamingRemoteConstants.REGISTER_INSTANCE:
                 return registerInstance(service, request, meta);

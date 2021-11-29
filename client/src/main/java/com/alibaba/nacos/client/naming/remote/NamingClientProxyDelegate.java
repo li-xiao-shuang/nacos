@@ -92,6 +92,7 @@ public class NamingClientProxyDelegate implements NamingClientProxy {
     
     @Override
     public void registerService(String serviceName, String groupName, Instance instance) throws NacosException {
+        // 获取一个client代理调用注册方法
         getExecuteClientProxy(instance).registerService(serviceName, groupName, instance);
     }
     
@@ -167,6 +168,7 @@ public class NamingClientProxyDelegate implements NamingClientProxy {
     }
     
     private NamingClientProxy getExecuteClientProxy(Instance instance) {
+        // 判断是否是临时实例  如果是就返回grpc代理，否则就是http代理
         return instance.isEphemeral() ? grpcClientProxy : httpClientProxy;
     }
     

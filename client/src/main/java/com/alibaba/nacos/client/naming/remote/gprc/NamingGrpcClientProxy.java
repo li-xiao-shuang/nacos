@@ -111,7 +111,9 @@ public class NamingGrpcClientProxy extends AbstractNamingClientProxy {
     public void registerService(String serviceName, String groupName, Instance instance) throws NacosException {
         NAMING_LOGGER.info("[REGISTER-SERVICE] {} registering service {} with instance {}", namespaceId, serviceName,
                 instance);
+        // 添加注册实例信息缓存
         redoService.cacheInstanceForRedo(serviceName, groupName, instance);
+        // 执行注册
         doRegisterService(serviceName, groupName, instance);
     }
     
@@ -124,9 +126,12 @@ public class NamingGrpcClientProxy extends AbstractNamingClientProxy {
      * @throws NacosException nacos exception
      */
     public void doRegisterService(String serviceName, String groupName, Instance instance) throws NacosException {
+        // 封装请求
         InstanceRequest request = new InstanceRequest(namespaceId, serviceName, groupName,
                 NamingRemoteConstants.REGISTER_INSTANCE, instance);
+        // 请求服务端
         requestToServer(request, Response.class);
+        // 修改缓存内的实例信息为已注册状态
         redoService.instanceRegistered(serviceName, groupName);
     }
     
@@ -247,6 +252,7 @@ public class NamingGrpcClientProxy extends AbstractNamingClientProxy {
         SubscribeServiceRequest request = new SubscribeServiceRequest(namespaceId, serviceName, groupName, clusters,
                 false);
         requestToServer(request, SubscribeServiceResponse.class);
+        // 移除注册实例信息缓存
         redoService.removeSubscriberForRedo(serviceName, groupName, clusters);
     }
     
@@ -262,6 +268,7 @@ public class NamingGrpcClientProxy extends AbstractNamingClientProxy {
     private <T extends Response> T requestToServer(AbstractNamingRequest request, Class<T> responseClass)
             throws NacosException {
         try {
+            // 添加header
             request.putAllHeader(getSecurityHeaders());
             request.putAllHeader(getSpasHeaders(
                     NamingUtils.getGroupedNameOptional(request.getServiceName(), request.getGroupName())));

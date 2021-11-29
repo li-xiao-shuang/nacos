@@ -49,19 +49,27 @@ public class EphemeralClientOperationServiceImpl implements ClientOperationServi
     
     @Override
     public void registerInstance(Service service, Instance instance, String clientId) {
+        // 如果service在ServiceManager中不存在，就添加进去
         Service singleton = ServiceManager.getInstance().getSingleton(service);
+        // 如果不是临时实例就报错
         if (!singleton.isEphemeral()) {
             throw new NacosRuntimeException(NacosException.INVALID_PARAM,
                     String.format("Current service %s is persistent service, can't register ephemeral instance.",
                             singleton.getGroupedServiceName()));
         }
+        
+        // 从clinet管理中获取client
         Client client = clientManager.getClient(clientId);
+        // 检查客户端是否是临时的
         if (!clientIsLegal(client, clientId)) {
             return;
         }
+        // 封装InstancePublishInfo对象
         InstancePublishInfo instanceInfo = getPublishInfo(instance);
+        // 添加服务实例到client
         client.addServiceInstance(singleton, instanceInfo);
         client.setLastUpdatedTime();
+        // 发布注册事件和元数据事件
         NotifyCenter.publishEvent(new ClientOperationEvent.ClientRegisterServiceEvent(singleton, clientId));
         NotifyCenter
                 .publishEvent(new MetadataEvent.InstanceMetadataEvent(singleton, instanceInfo.getMetadataId(), false));
